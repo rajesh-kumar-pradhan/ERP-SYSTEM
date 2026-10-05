@@ -1,0 +1,277 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  SALES_USER
+}
+
+enum EnquiryStatus {
+  NEW
+  QUOTED
+  WON
+  LOST
+}
+
+enum QuotationStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+}
+
+enum SalesOrderStatus {
+  PENDING
+  CONFIRMED
+  DISPATCHED
+  CANCELLED
+}
+
+enum InventoryMovementType {
+  STOCK_RECEIPT
+  RESERVATION
+  RESERVATION_RELEASE
+  DISPATCH
+  ADJUSTMENT
+}
+
+model User {
+  id                 String              @id @default(cuid())
+  name               String
+  email              String              @unique
+  passwordHash       String              @map("password_hash")
+  role               UserRole
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+  enquiries          Enquiry[]
+  quotations         Quotation[]
+  inventoryMovements InventoryMovement[]
+  auditLogs          AuditLog[]
+
+  @@map("users")
+}
+
+model Customer {
+  id            String       @id @default(cuid())
+  companyName   String       @map("company_name")
+  contactPerson String       @map("contact_person")
+  mobile        String
+  email         String
+  city          String
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+  enquiries     Enquiry[]
+  quotations    Quotation[]
+  salesOrders   SalesOrder[]
+
+  @@index([companyName])
+  @@map("customers")
+}
+
+model Product {
+  id                 String              @id @default(cuid())
+  productCode        String              @unique @map("product_code")
+  name               String
+  category           String
+  unit               String
+  basePrice          Decimal             @db.Decimal(14, 2) @map("base_price")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+  inventory          Inventory?
+  enquiryItems       EnquiryItem[]
+  quotationItems     QuotationItem[]
+  salesOrderItems    SalesOrderItem[]
+  dispatchItems      DispatchItem[]
+  inventoryMovements InventoryMovement[]
+
+  @@map("products")
+}
+
+model Inventory {
+  id               String   @id @default(cuid())
+  productId        String   @unique @map("product_id")
+  physicalQuantity Int      @default(0) @map("physical_quantity")
+  reservedQuantity Int      @default(0) @map("reserved_quantity")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  product          Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@map("inventory")
+}
+
+model Enquiry {
+  id           String        @id @default(cuid())
+  enquiryNumber String       @unique @map("enquiry_number")
+  customerId   String        @map("customer_id")
+  enquiryDate  DateTime      @default(now()) @map("enquiry_date")
+  requiredDate DateTime      @map("required_date")
+  status       EnquiryStatus @default(NEW)
+  notes        String?
+  createdById  String        @map("created_by_id")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+  customer     Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  createdBy    User          @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  items        EnquiryItem[]
+  quotations   Quotation[]
+
+  @@index([customerId, createdAt])
+  @@index([status])
+  @@map("enquiries")
+}
+
+model EnquiryItem {
+  id        String  @id @default(cuid())
+  enquiryId String  @map("enquiry_id")
+  productId String  @map("product_id")
+  quantity  Int
+  enquiry   Enquiry @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@unique([enquiryId, productId])
+  @@map("enquiry_items")
+}
+
+model Quotation {
+  id             String          @id @default(cuid())
+  quotationNumber String         @unique @map("quotation_number")
+  enquiryId      String          @map("enquiry_id")
+  customerId     String          @map("customer_id")
+  validUntil     DateTime        @map("valid_until")
+  status         QuotationStatus @default(DRAFT)
+  subtotal       Decimal         @db.Decimal(14, 2)
+  discountAmount Decimal         @db.Decimal(14, 2) @map("discount_amount")
+  gstAmount      Decimal         @db.Decimal(14, 2) @map("gst_amount")
+  grandTotal     Decimal         @db.Decimal(14, 2) @map("grand_total")
+  createdById    String          @map("created_by_id")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+  enquiry        Enquiry         @relation(fields: [enquiryId], references: [id], onDelete: Restrict)
+  customer       Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  createdBy      User            @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  items          QuotationItem[]
+  salesOrder     SalesOrder?
+
+  @@index([customerId, createdAt])
+  @@index([status])
+  @@map("quotations")
+}
+
+model QuotationItem {
+  id                 String    @id @default(cuid())
+  quotationId        String    @map("quotation_id")
+  productId          String    @map("product_id")
+  quantity           Int
+  unitPrice          Decimal   @db.Decimal(14, 2) @map("unit_price")
+  discountPercent    Decimal   @db.Decimal(5, 2) @map("discount_percent")
+  gstPercent         Decimal   @db.Decimal(5, 2) @map("gst_percent")
+  baseAmount         Decimal   @db.Decimal(14, 2) @map("base_amount")
+  discountAmount     Decimal   @db.Decimal(14, 2) @map("discount_amount")
+  taxableAmount      Decimal   @db.Decimal(14, 2) @map("taxable_amount")
+  gstAmount          Decimal   @db.Decimal(14, 2) @map("gst_amount")
+  lineAmount         Decimal   @db.Decimal(14, 2) @map("line_amount")
+  quotation          Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  product            Product   @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@unique([quotationId, productId])
+  @@map("quotation_items")
+}
+
+model SalesOrder {
+  id              String           @id @default(cuid())
+  orderNumber     String           @unique @map("order_number")
+  customerId      String           @map("customer_id")
+  quotationId     String           @unique @map("quotation_id")
+  orderDate       DateTime         @default(now()) @map("order_date")
+  totalAmount     Decimal          @db.Decimal(14, 2) @map("total_amount")
+  status          SalesOrderStatus @default(PENDING)
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  customer        Customer         @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  quotation       Quotation        @relation(fields: [quotationId], references: [id], onDelete: Restrict)
+  items           SalesOrderItem[]
+  dispatch        Dispatch?
+
+  @@index([customerId, createdAt])
+  @@index([status])
+  @@map("sales_orders")
+}
+
+model SalesOrderItem {
+  id           String     @id @default(cuid())
+  salesOrderId String     @map("sales_order_id")
+  productId    String     @map("product_id")
+  quantity     Int
+  unitPrice    Decimal    @db.Decimal(14, 2) @map("unit_price")
+  lineAmount   Decimal    @db.Decimal(14, 2) @map("line_amount")
+  salesOrder   SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+  product      Product    @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@unique([salesOrderId, productId])
+  @@map("sales_order_items")
+}
+
+model Dispatch {
+  id             String   @id @default(cuid())
+  dispatchNumber String   @unique @map("dispatch_number")
+  salesOrderId   String   @unique @map("sales_order_id")
+  dispatchDate   DateTime @default(now()) @map("dispatch_date")
+  vehicleNumber  String   @map("vehicle_number")
+  driverName     String   @map("driver_name")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  salesOrder     SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Restrict)
+  items          DispatchItem[]
+
+  @@map("dispatches")
+}
+
+model DispatchItem {
+  id         String   @id @default(cuid())
+  dispatchId String   @map("dispatch_id")
+  productId  String   @map("product_id")
+  quantity   Int
+  dispatch   Dispatch @relation(fields: [dispatchId], references: [id], onDelete: Cascade)
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@unique([dispatchId, productId])
+  @@map("dispatch_items")
+}
+
+model InventoryMovement {
+  id            String                @id @default(cuid())
+  productId     String                @map("product_id")
+  type          InventoryMovementType
+  quantity      Int
+  referenceType String                @map("reference_type")
+  referenceId   String                @map("reference_id")
+  createdById   String?               @map("created_by_id")
+  createdAt     DateTime              @default(now()) @map("created_at")
+  product       Product               @relation(fields: [productId], references: [id], onDelete: Restrict)
+  createdBy     User?                 @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([productId, createdAt])
+  @@index([referenceType, referenceId])
+  @@map("inventory_movements")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?  @map("user_id")
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([userId, createdAt])
+  @@map("audit_logs")
+}

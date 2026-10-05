@@ -1,0 +1,50 @@
+{
+  "info": {
+    "name": "IndustrialFlow ERP API",
+    "description": "Import, set baseUrl, run Login (it stores token), then execute the workflow in order.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000/api" },
+    { "key": "token", "value": "" },
+    { "key": "customerId", "value": "" },
+    { "key": "productId", "value": "" },
+    { "key": "enquiryId", "value": "" },
+    { "key": "quotationId", "value": "" },
+    { "key": "salesOrderId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login sales user",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.collectionVariables.set('token', pm.response.json().data.token);"] } }],
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/auth/login", "body": { "mode": "raw", "raw": "{\n  \"email\": \"sales@industrialflow.local\",\n  \"password\": \"IndustrialFlow@123\"\n}" } }
+        },
+        { "name": "Current user", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/auth/me" } }
+      ]
+    },
+    { "name": "Reference data", "item": [
+      { "name": "Products", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/products" } },
+      { "name": "Inventory", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/inventory" } },
+      { "name": "Customers", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/customers" } }
+    ] },
+    { "name": "Workflow", "item": [
+      { "name": "Create customer", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }, { "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/customers", "body": { "mode": "raw", "raw": "{\n  \"companyName\": \"Demo Works\",\n  \"contactPerson\": \"Demo Contact\",\n  \"mobile\": \"+91 9876500000\",\n  \"email\": \"demo@works.example\",\n  \"city\": \"Pune\"\n}" } } },
+      { "name": "Create enquiry", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }, { "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/enquiries", "body": { "mode": "raw", "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"requiredDate\": \"2026-11-15\",\n  \"items\": [{ \"productId\": \"{{productId}}\", \"quantity\": 2 }]\n}" } } },
+      { "name": "Create quotation", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }, { "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/quotations", "body": { "mode": "raw", "raw": "{\n  \"enquiryId\": \"{{enquiryId}}\",\n  \"validUntil\": \"2026-11-01\",\n  \"items\": [{ \"productId\": \"{{productId}}\", \"quantity\": 2, \"unitPrice\": \"100.00\", \"discountPercent\": 0, \"gstPercent\": 18 }]\n}" } } },
+      { "name": "Mark quotation sent", "request": { "method": "PATCH", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }, { "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/quotations/{{quotationId}}/status", "body": { "mode": "raw", "raw": "{ \"status\": \"SENT\" }" } } },
+      { "name": "Accept quotation", "request": { "method": "PATCH", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }, { "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/quotations/{{quotationId}}/status", "body": { "mode": "raw", "raw": "{ \"status\": \"ACCEPTED\" }" } } },
+      { "name": "Convert quotation", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/quotations/{{quotationId}}/convert" } },
+      { "name": "List sales orders", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/sales-orders" } },
+      { "name": "Confirm order (ADMIN token)", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/sales-orders/{{salesOrderId}}/confirm" } },
+      { "name": "Dispatch order (ADMIN token)", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }, { "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/sales-orders/{{salesOrderId}}/dispatch", "body": { "mode": "raw", "raw": "{ \"vehicleNumber\": \"MH12 AB 1234\", \"driverName\": \"Nikhil Patil\" }" } } }
+    ] },
+    { "name": "Admin traceability", "item": [
+      { "name": "Inventory movements", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/inventory/movements" } },
+      { "name": "Audit logs", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/audit-logs" } }
+    ] }
+  ]
+}
+

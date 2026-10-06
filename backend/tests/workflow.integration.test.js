@@ -54,6 +54,77 @@ describeDatabase('ERP workflow integration', () => {
     const repeated = await request(app).post(`/api/quotations/${quote.id}/convert`).set('Authorization', `Bearer ${salesToken}`);
     expect(repeated.status).toBe(409); expect(repeated.body.code).toBe('DUPLICATE_OPERATION');
   });
+  it('moves an enquiry to QUOTED when its first quotation is created', async () => {
+    const enquiryResponse = await request(app).post('/api/enquiries').set('Authorization', `Bearer ${salesToken}`).send({
+      customerId: customer.id,
+      requiredDate: '2027-01-01',
+      items: [{ productId: product.id, quantity: 2 }],
+    });
+    expect(enquiryResponse.status).toBe(201);
+    expect(enquiryResponse.body.data.status).toBe('NEW');
+    const quoteResponse = await request(app).post('/api/quotations').set('Authorization', `Bearer ${salesToken}`).send({
+      enquiryId: enquiryResponse.body.data.id,
+      validUntil: '2027-02-01',
+      items: [{ productId: product.id, quantity: 2, unitPrice: '100.00', discountPercent: 0, gstPercent: 18 }],
+    });
+    expect(quoteResponse.status).toBe(201);
+    expect((await prisma.enquiry.findUnique({ where: { id: enquiryResponse.body.data.id } })).status).toBe('QUOTED');
+  });
+  it('allows Sales to mark an open enquiry LOST but rejects later quotation creation', async () => {
+    const { quote } = await orderFixture({ quoteStatus: 'DRAFT' });
+    const response = await request(app).patch(`/api/enquiries/${quote.enquiryId}/status`).set('Authorization', `Bearer ${salesToken}`).send({ status: 'LOST' });
+    expect(response.status).toBe(200);
+    expect(response.body.data.status).toBe('LOST');
+    const quoteResponse = await request(app).post('/api/quotations').set('Authorization', `Bearer ${salesToken}`).send({
+      enquiryId: quote.enquiryId,
+      validUntil: '2027-02-01',
+      items: [{ productId: product.id, quantity: 1, unitPrice: '100.00', discountPercent: 0, gstPercent: 18 }],
+    });
+    expect(quoteResponse.status).toBe(409);
+    expect(quoteResponse.body.code).toBe('INVALID_STATE');
+  });
+  it('deletes an unused customer and preserves customers with enquiry history', async () => {
+    const unused = await prisma.customer.create({ data: { companyName: 'Unused Company', contactPerson: 'Contact', mobile: '9999999998', email: 'unused@test.local', city: 'Pune' } });
+    const deleted = await request(app).delete(`/api/customers/${unused.id}`).set('Authorization', `Bearer ${salesToken}`);
+    expect(deleted.status).toBe(204);
+    expect(await prisma.customer.findUnique({ where: { id: unused.id } })).toBeNull();
+
+    await orderFixture();
+    const protectedCustomer = await request(app).delete(`/api/customers/${customer.id}`).set('Authorization', `Bearer ${salesToken}`);
+    expect(protectedCustomer.status).toBe(409);
+    expect(protectedCustomer.body.code).toBe('CUSTOMER_IN_USE');
+  });
+  it('rejects quotation products that were not requested in the enquiry', async () => {
+    const { quote } = await orderFixture({ quoteStatus: 'DRAFT' });
+    const otherProduct = await prisma.product.create({ data: { productCode: 'TEST-OTHER', name: 'Other Pump', category: 'Test', unit: 'Nos', basePrice: '150.00' } });
+    const response = await request(app).post('/api/quotations').set('Authorization', `Bearer ${salesToken}`).send({
+      enquiryId: quote.enquiryId,
+      validUntil: '2027-02-01',
+      items: [{ productId: otherProduct.id, quantity: 1, unitPrice: '150.00', discountPercent: 0, gstPercent: 18 }],
+    });
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('PRODUCT_NOT_IN_ENQUIRY');
+  });
+  it('allows admins to create a product with opening inventory and a stock ledger entry', async () => {
+    const response = await request(app).post('/api/products').set('Authorization', `Bearer ${adminToken}`).send({
+      productCode: 'NEW-001',
+      name: 'New Industrial Valve',
+      category: 'Valves',
+      unit: 'Nos',
+      basePrice: '2500.00',
+      initialQuantity: 24,
+    });
+    expect(response.status).toBe(201);
+    const created = await prisma.inventory.findUnique({ where: { productId: response.body.data.id } });
+    expect(created.physicalQuantity).toBe(24);
+    expect(created.reservedQuantity).toBe(0);
+    expect(await prisma.inventoryMovement.count({ where: { productId: response.body.data.id, type: 'STOCK_RECEIPT' } })).toBe(1);
+  });
+  it('forbids sales users from creating catalog products', async () => {
+    const response = await request(app).post('/api/products').set('Authorization', `Bearer ${salesToken}`).send({});
+    expect(response.status).toBe(403);
+    expect(response.body.code).toBe('FORBIDDEN');
+  });
   it('prevents insufficient inventory and leaves the order pending', async () => {
     const { order } = await orderFixture({ quantity: 11, physical: 10 });
     const response = await request(app).post(`/api/sales-orders/${order.id}/confirm`).set('Authorization', `Bearer ${adminToken}`);
@@ -64,6 +135,22 @@ describeDatabase('ERP workflow integration', () => {
     const { order } = await orderFixture();
     const response = await request(app).post(`/api/sales-orders/${order.id}/confirm`).set('Authorization', `Bearer ${salesToken}`);
     expect(response.status).toBe(403); expect(response.body.code).toBe('FORBIDDEN');
+    const cancellation = await request(app).post(`/api/sales-orders/${order.id}/cancel`).set('Authorization', `Bearer ${salesToken}`);
+    expect(cancellation.status).toBe(403); expect(cancellation.body.code).toBe('FORBIDDEN');
+  });
+  it('forbids admins from creating customers, enquiries, or quotations and changing quotation workflow', async () => {
+    const { quote } = await orderFixture({ quoteStatus: 'DRAFT' });
+    const headers = { Authorization: `Bearer ${adminToken}` };
+    const responses = await Promise.all([
+      request(app).post('/api/customers').set(headers).send({}),
+      request(app).delete('/api/customers/unused-customer-id').set(headers),
+      request(app).post('/api/enquiries').set(headers).send({}),
+      request(app).post('/api/quotations').set(headers).send({}),
+      request(app).patch(`/api/quotations/${quote.id}/status`).set(headers).send({ status: 'SENT' }),
+      request(app).post(`/api/quotations/${quote.id}/convert`).set(headers),
+    ]);
+    expect(responses.map((response) => response.status)).toEqual([403, 403, 403, 403, 403, 403]);
+    expect(responses.every((response) => response.body.code === 'FORBIDDEN')).toBe(true);
   });
   it.each([[80, 50], [70, 80]])('serializes concurrent reservations so %i and %i cannot oversubscribe 100', async (firstQuantity, secondQuantity) => {
     const first = await orderFixture({ quantity: firstQuantity, physical: 100 });
@@ -88,6 +175,25 @@ describeDatabase('ERP workflow integration', () => {
     expect(responses.map((response) => response.status)).toEqual([200, 200]);
     const inventory = await prisma.inventory.findUnique({ where: { productId: product.id } });
     expect(inventory.reservedQuantity).toBe(70);
+  });
+  it('cancels a pending order without changing inventory', async () => {
+    const { order } = await orderFixture({ quantity: 3, physical: 10, reserved: 0 });
+    const response = await request(app).post(`/api/sales-orders/${order.id}/cancel`).set('Authorization', `Bearer ${adminToken}`);
+    expect(response.status).toBe(200);
+    expect(response.body.data.status).toBe('CANCELLED');
+    const inventory = await prisma.inventory.findUnique({ where: { productId: product.id } });
+    expect(inventory.physicalQuantity).toBe(10);
+    expect(inventory.reservedQuantity).toBe(0);
+  });
+  it('cancels a confirmed order and releases its reservation without reducing physical stock', async () => {
+    const { order } = await orderFixture({ quantity: 3, physical: 10, reserved: 3, orderStatus: 'CONFIRMED' });
+    const response = await request(app).post(`/api/sales-orders/${order.id}/cancel`).set('Authorization', `Bearer ${adminToken}`);
+    expect(response.status).toBe(200);
+    expect(response.body.data.status).toBe('CANCELLED');
+    const inventory = await prisma.inventory.findUnique({ where: { productId: product.id } });
+    expect(inventory.physicalQuantity).toBe(10);
+    expect(inventory.reservedQuantity).toBe(0);
+    expect(await prisma.inventoryMovement.count({ where: { productId: product.id, type: 'RESERVATION_RELEASE', referenceId: order.id } })).toBe(1);
   });
   it('prevents dispatch beyond the reserved quantity', async () => {
     const { order } = await orderFixture({ quantity: 3, physical: 10, reserved: 2, orderStatus: 'CONFIRMED' });

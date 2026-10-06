@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "IndustrialFlow ERP API",
-    "description": "Set baseUrl, run both login requests, then run Reference data and Workflow in order. Response scripts save the IDs needed by later requests. Sales requests use token; Admin-only requests use adminToken.",
+    "description": "Set baseUrl, run both login requests, then run Reference data, Sales workflow, and Admin operations for the happy path. Optional lifecycle examples are separate so LOST and CANCELLED actions do not interrupt the main flow. Response scripts save IDs automatically.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -13,7 +13,11 @@
     { "key": "enquiryId", "value": "" },
     { "key": "quotationId", "value": "" },
     { "key": "salesOrderId", "value": "" },
-    { "key": "newProductId", "value": "" }
+    { "key": "newProductId", "value": "" },
+    { "key": "lostEnquiryId", "value": "" },
+    { "key": "cancelEnquiryId", "value": "" },
+    { "key": "cancelQuotationId", "value": "" },
+    { "key": "cancelSalesOrderId", "value": "" }
   ],
   "item": [
     {
@@ -58,7 +62,6 @@
           "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Enquiry created', () => pm.response.to.have.status(201));", "pm.collectionVariables.set('enquiryId', pm.response.json().data.id);"] } }],
           "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }, { "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/enquiries", "body": { "mode": "raw", "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"requiredDate\": \"2026-12-15\",\n  \"items\": [{ \"productId\": \"{{productId}}\", \"quantity\": 2 }]\n}" } }
         },
-        { "name": "Mark enquiry lost (instead of quoting)", "request": { "method": "PATCH", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }, { "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/enquiries/{{enquiryId}}/status", "body": { "mode": "raw", "raw": "{ \"status\": \"LOST\" }" } } },
         {
           "name": "Create quotation",
           "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Quotation created', () => pm.response.to.have.status(201));", "pm.collectionVariables.set('quotationId', pm.response.json().data.id);"] } }],
@@ -80,10 +83,40 @@
         { "name": "Create product with opening stock", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/products", "body": { "mode": "raw", "raw": "{\n  \"productCode\": \"PM-{{$timestamp}}\",\n  \"name\": \"Postman Demo Valve\",\n  \"category\": \"Valves\",\n  \"unit\": \"Nos\",\n  \"basePrice\": \"2500.00\",\n  \"initialQuantity\": 10\n}" } } },
         { "name": "Receive stock for existing product", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/inventory/receipts", "body": { "mode": "raw", "raw": "{ \"productId\": \"{{productId}}\", \"quantity\": 5, \"note\": \"Postman stock receipt\" }" } } },
         { "name": "Confirm sales order", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }], "url": "{{baseUrl}}/sales-orders/{{salesOrderId}}/confirm" } },
-        { "name": "Cancel pending or confirmed order", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }], "url": "{{baseUrl}}/sales-orders/{{salesOrderId}}/cancel" } },
         { "name": "Dispatch confirmed order", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/sales-orders/{{salesOrderId}}/dispatch", "body": { "mode": "raw", "raw": "{ \"vehicleNumber\": \"MH12 AB 1234\", \"driverName\": \"Nikhil Patil\" }" } } },
         { "name": "Inventory movements", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }], "url": "{{baseUrl}}/inventory/movements" } },
         { "name": "Audit logs", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }], "url": "{{baseUrl}}/audit-logs" } }
+      ]
+    },
+    {
+      "name": "Optional lifecycle examples (separate from happy path)",
+      "description": "Run either example independently after logging in and running Reference data. These create separate records and do not affect the main enquiry/order workflow.",
+      "item": [
+        {
+          "name": "Create alternate enquiry for LOST example",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Alternate enquiry created', () => pm.response.to.have.status(201));", "pm.collectionVariables.set('lostEnquiryId', pm.response.json().data.id);"] } }],
+          "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }, { "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/enquiries", "body": { "mode": "raw", "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"requiredDate\": \"2026-12-20\",\n  \"notes\": \"Separate Postman example for marking an enquiry lost.\",\n  \"items\": [{ \"productId\": \"{{productId}}\", \"quantity\": 1 }]\n}" } }
+        },
+        { "name": "Mark alternate enquiry LOST", "request": { "method": "PATCH", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }, { "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/enquiries/{{lostEnquiryId}}/status", "body": { "mode": "raw", "raw": "{ \"status\": \"LOST\" }" } } },
+        {
+          "name": "Create separate enquiry for cancellation example",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Cancellation enquiry created', () => pm.response.to.have.status(201));", "pm.collectionVariables.set('cancelEnquiryId', pm.response.json().data.id);"] } }],
+          "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }, { "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/enquiries", "body": { "mode": "raw", "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"requiredDate\": \"2026-12-20\",\n  \"notes\": \"Separate Postman example for order cancellation.\",\n  \"items\": [{ \"productId\": \"{{productId}}\", \"quantity\": 1 }]\n}" } }
+        },
+        {
+          "name": "Create cancellation-example quotation",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Cancellation quotation created', () => pm.response.to.have.status(201));", "pm.collectionVariables.set('cancelQuotationId', pm.response.json().data.id);"] } }],
+          "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }, { "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/quotations", "body": { "mode": "raw", "raw": "{\n  \"enquiryId\": \"{{cancelEnquiryId}}\",\n  \"validUntil\": \"2026-12-01\",\n  \"items\": [{ \"productId\": \"{{productId}}\", \"quantity\": 1, \"unitPrice\": \"100.00\", \"discountPercent\": 0, \"gstPercent\": 18 }]\n}" } }
+        },
+        { "name": "Send cancellation-example quotation", "request": { "method": "PATCH", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }, { "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/quotations/{{cancelQuotationId}}/status", "body": { "mode": "raw", "raw": "{ \"status\": \"SENT\" }" } } },
+        { "name": "Accept cancellation-example quotation", "request": { "method": "PATCH", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }, { "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/quotations/{{cancelQuotationId}}/status", "body": { "mode": "raw", "raw": "{ \"status\": \"ACCEPTED\" }" } } },
+        {
+          "name": "Convert cancellation-example quotation",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Cancellation example order created', () => pm.response.to.have.status(201));", "pm.collectionVariables.set('cancelSalesOrderId', pm.response.json().data.id);"] } }],
+          "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/quotations/{{cancelQuotationId}}/convert" }
+        },
+        { "name": "Confirm cancellation-example order (ADMIN)", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }], "url": "{{baseUrl}}/sales-orders/{{cancelSalesOrderId}}/confirm" } },
+        { "name": "Cancel separate confirmed order and release stock (ADMIN)", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }], "url": "{{baseUrl}}/sales-orders/{{cancelSalesOrderId}}/cancel" } }
       ]
     }
   ]

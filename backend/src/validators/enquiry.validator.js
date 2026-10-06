@@ -11,3 +11,5 @@ export const enquirySchema = z.object({
   message: 'Required date cannot be before enquiry date', path: ['requiredDate'],
 });
 
+export const enquiryStatusSchema = z.object({ status: z.literal('LOST') });
+

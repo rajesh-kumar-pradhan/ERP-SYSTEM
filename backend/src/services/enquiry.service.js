@@ -1,7 +1,8 @@
 import { prisma } from '../lib/prisma.js';
 import { businessNumber } from '../utils/business-number.js';
-import { notFound } from '../utils/app-error.js';
+import { conflict, notFound } from '../utils/app-error.js';
 import { audit } from './audit.service.js';
+import { assertTransition } from './state-machine.service.js';
 
 const include = {
   customer: true,
@@ -46,5 +47,23 @@ export async function getEnquiry(id) {
   const enquiry = await prisma.enquiry.findUnique({ where: { id }, include });
   if (!enquiry) throw notFound('Enquiry');
   return enquiry;
+}
+
+export async function markEnquiryLost(id, userId) {
+  return prisma.$transaction(async (tx) => {
+    const locked = await tx.$queryRaw`SELECT "id", "status" FROM "enquiries" WHERE "id" = ${id} FOR UPDATE`;
+    const enquiry = locked[0];
+    if (!enquiry) throw notFound('Enquiry');
+    assertTransition('enquiry', enquiry.status, 'LOST');
+
+    const acceptedQuotes = await tx.quotation.count({ where: { enquiryId: id, status: 'ACCEPTED' } });
+    if (acceptedQuotes > 0) {
+      throw conflict('An enquiry with an accepted quotation cannot be marked lost.', 'INVALID_STATE');
+    }
+
+    const updated = await tx.enquiry.update({ where: { id }, data: { status: 'LOST' }, include });
+    await audit(tx, { userId, action: 'MARK_ENQUIRY_LOST', entityType: 'ENQUIRY', entityId: id, metadata: { from: enquiry.status, to: 'LOST' } });
+    return updated;
+  });
 }
 

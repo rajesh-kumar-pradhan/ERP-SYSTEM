@@ -18,13 +18,21 @@ export async function createQuotation(data, userId) {
   const productIds = data.items.map((item) => item.productId);
   const calculation = calculateQuotation(data.items);
   return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "enquiries" WHERE "id" = ${data.enquiryId} FOR UPDATE`;
     const [enquiry, productCount] = await Promise.all([
-      tx.enquiry.findUnique({ where: { id: data.enquiryId }, select: { id: true, customerId: true, status: true } }),
+      tx.enquiry.findUnique({
+        where: { id: data.enquiryId },
+        select: { id: true, customerId: true, status: true, items: { select: { productId: true } } },
+      }),
       tx.product.count({ where: { id: { in: productIds } } }),
     ]);
     if (!enquiry) throw notFound('Enquiry');
-    if (enquiry.status === 'LOST') throw conflict('Cannot quote a lost enquiry', 'INVALID_STATE');
+    if (!['NEW', 'QUOTED'].includes(enquiry.status)) throw conflict(`Cannot quote a ${enquiry.status.toLowerCase()} enquiry`, 'INVALID_STATE');
     if (productCount !== productIds.length) throw notFound('One or more products');
+    const enquiryProductIds = new Set(enquiry.items.map((item) => item.productId));
+    if (productIds.some((productId) => !enquiryProductIds.has(productId))) {
+      throw conflict('Quotation products must be selected from the related enquiry.', 'PRODUCT_NOT_IN_ENQUIRY');
+    }
 
     const quotation = await tx.quotation.create({
       data: {
@@ -41,6 +49,9 @@ export async function createQuotation(data, userId) {
       },
       include,
     });
+    if (enquiry.status === 'NEW') {
+      await tx.enquiry.update({ where: { id: enquiry.id }, data: { status: 'QUOTED' } });
+    }
     await audit(tx, { userId, action: 'CREATE_QUOTATION', entityType: 'QUOTATION', entityId: quotation.id, metadata: { quotationNumber: quotation.quotationNumber } });
     return quotation;
   });
@@ -63,6 +74,12 @@ export async function transitionQuotation(id, status, userId) {
     const quotation = locked[0];
     if (!quotation) throw notFound('Quotation');
     assertTransition('quotation', quotation.status, status);
+    if (status === 'ACCEPTED') {
+      const enquiryRows = await tx.$queryRaw`SELECT "id", "status" FROM "enquiries" WHERE "id" = ${quotation.enquiry_id} FOR UPDATE`;
+      if (!enquiryRows[0] || !['NEW', 'QUOTED'].includes(enquiryRows[0].status)) {
+        throw conflict('Cannot accept a quotation for a closed enquiry', 'INVALID_STATE');
+      }
+    }
     const updated = await tx.quotation.update({ where: { id }, data: { status }, include });
     const actions = { SENT: 'SEND_QUOTATION', ACCEPTED: 'ACCEPT_QUOTATION', REJECTED: 'REJECT_QUOTATION' };
     await audit(tx, { userId, action: actions[status], entityType: 'QUOTATION', entityId: id, metadata: { from: quotation.status, to: status } });
@@ -78,6 +95,11 @@ export async function convertQuotation(id, userId) {
     const existing = await tx.salesOrder.findUnique({ where: { quotationId: id }, select: { id: true } });
     if (existing) throw conflict('This quotation has already been converted', 'DUPLICATE_OPERATION');
     if (quotation.status !== 'ACCEPTED') throw conflict('Only an accepted quotation can be converted', 'INVALID_STATE');
+    const enquiryRows = await tx.$queryRaw`SELECT "id", "status" FROM "enquiries" WHERE "id" = ${quotation.enquiry_id} FOR UPDATE`;
+    if (!enquiryRows[0] || !['NEW', 'QUOTED'].includes(enquiryRows[0].status)) {
+      throw conflict('Cannot convert a quotation for a closed enquiry', 'INVALID_STATE');
+    }
+    assertTransition('enquiry', enquiryRows[0].status, 'WON');
 
     const quoteItems = await tx.quotationItem.findMany({ where: { quotationId: id } });
     const order = await tx.salesOrder.create({

@@ -14,3 +14,7 @@ export async function get(req, res) {
   res.json({ success: true, data: serialize(await enquiryService.getEnquiry(req.params.id)) });
 }
 
+export async function updateStatus(req, res) {
+  res.json({ success: true, data: serialize(await enquiryService.markEnquiryLost(req.params.id, req.user.id)) });
+}
+

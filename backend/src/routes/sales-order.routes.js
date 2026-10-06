@@ -11,6 +11,7 @@ router.use(authenticate);
 router.get('/', asyncHandler(controller.list));
 router.get('/:id', asyncHandler(controller.get));
 router.post('/:id/confirm', authorize('ADMIN'), asyncHandler(controller.confirm));
+router.post('/:id/cancel', authorize('ADMIN'), asyncHandler(controller.cancel));
 router.post('/:id/dispatch', authorize('ADMIN'), validate(dispatchSchema), asyncHandler(dispatch));
 export default router;
 

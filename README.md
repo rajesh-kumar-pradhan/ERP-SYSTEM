@@ -112,7 +112,7 @@ Use `prisma migrate deploy` for a production-like/CI deployment. `prisma migrate
 | ADMIN | `admin@industrialflow.local` | `IndustrialFlow@123` |
 | SALES_USER | `sales@industrialflow.local` | `IndustrialFlow@123` |
 
-The seed is idempotent and creates the two accounts, six industrial products with inventory, three customers, and a draft demo enquiry/quotation. Replace the demonstration password in a real deployment.
+The seed is idempotent and creates the two accounts, eight industrial products with inventory, three customers, and a draft demo enquiry/quotation. Admins can also add catalog products with opening stock from Inventory Control. Replace the demonstration password in a real deployment.
 
 ## Testing
 
@@ -124,7 +124,18 @@ npm test
 TEST_DATABASE_URL="postgresql://postgres:password@localhost:5432/industrialflow_test?schema=public" npm test
 ```
 
-The integration suite never falls back to `erp_system`; it is skipped unless `TEST_DATABASE_URL` is supplied. After creating and migrating `industrialflow_test`, it verifies: invalid draft/rejected conversion, duplicate conversion, insufficient inventory, ADMIN RBAC, dispatch stock checks, atomic dispatch decrement, and movement creation. This avoids any accidental test reset of development data.
+The integration suite never falls back to `erp_system`; it is skipped unless `TEST_DATABASE_URL` is supplied. After creating and migrating `industrialflow_test`, the automated coverage includes:
+
+1. Quotation discount, GST, and grand-total calculation (`financial.service.test.js`).
+2. Draft and rejected quotations cannot be converted into sales orders (`workflow.integration.test.js`).
+3. A quotation cannot create duplicate sales orders (`workflow.integration.test.js`).
+4. An order cannot reserve more than available inventory (`workflow.integration.test.js`).
+5. A Sales User cannot perform Admin-only order confirmation (`workflow.integration.test.js`).
+6. Bonus: concurrent reservations cannot oversubscribe stock; concurrent requests that fit may both succeed (`workflow.integration.test.js`).
+7. Enquiries move to `QUOTED`/`LOST` correctly, and a lost enquiry cannot receive a quotation (`workflow.integration.test.js`).
+8. Admin cancellation of pending and confirmed orders; confirmed-order cancellation releases reservations without decreasing physical stock (`workflow.integration.test.js`).
+
+The integration tests use only the separate `industrialflow_test` database, avoiding any accidental reset of development data.
 
 ## API, UI, and Postman
 
@@ -132,12 +143,12 @@ The integration suite never falls back to `erp_system`; it is skipped unless `TE
 - Mermaid ER diagram: [docs/ER-DIG.md](docs/ER-DIG.md)
 - Import [postman/IndustrialFlow.postman_collection.json](postman/IndustrialFlow.postman_collection.json) and set `baseUrl`; the Login request stores `token` automatically.
 
-The UI intentionally has only the workflow screens: Login, Enquiries (including customer creation), Quotations, Sales Orders, and Inventory. Navigation and buttons adapt to role for usability; the backend independently enforces every restricted action.
+The UI includes Login, Overview, Enquiries (including customer creation), Quotations, Sales Orders, and Inventory. Navigation and actions adapt to role for usability; the backend independently enforces every restricted action.
 
 ## Assumptions and trade-offs
 
 - Each order is dispatched in full once. This keeps the required `CONFIRMED → DISPATCHED` workflow clear; `dispatch_items` is already modeled so partial deliveries can be introduced later without denormalizing data.
-- Cancellation is declared in the order state policy but withheld from the UI/API until the release workflow is specified. A future confirmed-order cancellation should be one transaction: lock inventory, decrement reserved, add `RESERVATION_RELEASE` movements, set `CANCELLED`, and audit the event.
+- Admins can cancel pending or confirmed orders. Cancelling a confirmed order releases reserved quantities, records `RESERVATION_RELEASE` movements, and leaves physical stock unchanged, all atomically. Dispatched orders cannot be cancelled.
 - Damaged stock is not modeled prematurely. Adding `damaged_quantity` and extending the availability calculation to `physical - reserved - damaged`, plus a movement type, does not require rewriting documents, audit, or reservation logic.
 - Document numbers are timestamp/entropy strings and protected by unique constraints. They are suitable for the evaluation; a future legal numbering sequence can be added as a small database-backed allocator.
 
@@ -147,4 +158,4 @@ The UI intentionally has only the workflow screens: Login, Enquiries (including 
 
 ## Git
 
-Suggested meaningful commits for this implementation are listed in the evaluation brief. This workspace was supplied without an initialized writable Git metadata directory, so no commits could be created here; application files are ready to be committed once Git is initialized in the developer’s normal repository.
+The repository uses phase-based commits to keep its development history reviewable. Inspect history with `git log --oneline --decorate`; check pending work with `git status`. Keep each commit focused on one workflow phase (schema, APIs/business rules, UI, tests, or documentation), and push each completed phase. Do not commit generated archives, build output, or environment files.

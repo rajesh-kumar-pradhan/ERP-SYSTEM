@@ -65,9 +65,9 @@ describeDatabase('ERP workflow integration', () => {
     const response = await request(app).post(`/api/sales-orders/${order.id}/confirm`).set('Authorization', `Bearer ${salesToken}`);
     expect(response.status).toBe(403); expect(response.body.code).toBe('FORBIDDEN');
   });
-  it('serializes concurrent reservations so oversubscription cannot occur', async () => {
-    const first = await orderFixture({ quantity: 80, physical: 100 });
-    const second = await orderFixture({ quantity: 50, physical: 100 });
+  it.each([[80, 50], [70, 80]])('serializes concurrent reservations so %i and %i cannot oversubscribe 100', async (firstQuantity, secondQuantity) => {
+    const first = await orderFixture({ quantity: firstQuantity, physical: 100 });
+    const second = await orderFixture({ quantity: secondQuantity, physical: 100 });
     const responses = await Promise.all([
       request(app).post(`/api/sales-orders/${first.order.id}/confirm`).set('Authorization', `Bearer ${adminToken}`),
       request(app).post(`/api/sales-orders/${second.order.id}/confirm`).set('Authorization', `Bearer ${adminToken}`),
@@ -76,7 +76,18 @@ describeDatabase('ERP workflow integration', () => {
     expect(responses.filter((response) => response.status === 409 && response.body.code === 'INSUFFICIENT_STOCK')).toHaveLength(1);
     const inventory = await prisma.inventory.findUnique({ where: { productId: product.id } });
     expect(inventory.reservedQuantity).toBeLessThanOrEqual(inventory.physicalQuantity);
-    expect([50, 80]).toContain(inventory.reservedQuantity);
+    expect([firstQuantity, secondQuantity]).toContain(inventory.reservedQuantity);
+  });
+  it('allows concurrent reservations when their combined quantity fits available stock', async () => {
+    const first = await orderFixture({ quantity: 30, physical: 100 });
+    const second = await orderFixture({ quantity: 40, physical: 100 });
+    const responses = await Promise.all([
+      request(app).post(`/api/sales-orders/${first.order.id}/confirm`).set('Authorization', `Bearer ${adminToken}`),
+      request(app).post(`/api/sales-orders/${second.order.id}/confirm`).set('Authorization', `Bearer ${adminToken}`),
+    ]);
+    expect(responses.map((response) => response.status)).toEqual([200, 200]);
+    const inventory = await prisma.inventory.findUnique({ where: { productId: product.id } });
+    expect(inventory.reservedQuantity).toBe(70);
   });
   it('prevents dispatch beyond the reserved quantity', async () => {
     const { order } = await orderFixture({ quantity: 3, physical: 10, reserved: 2, orderStatus: 'CONFIRMED' });

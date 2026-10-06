@@ -10,19 +10,21 @@ const products = [
   { productCode: 'IGB-30', name: 'Industrial Helical Gearbox 30:1', category: 'Power Transmission', unit: 'Nos', basePrice: '32900.00', quantity: 22 },
   { productCode: 'PS-16B', name: 'Pressure Sensor 16 Bar', category: 'Instrumentation', unit: 'Nos', basePrice: '5900.00', quantity: 80 },
   { productCode: 'EM-5HP', name: 'TEFC Electric Motor 5 HP', category: 'Motors', unit: 'Nos', basePrice: '21800.00', quantity: 48 },
+  { productCode: 'HHA-12M', name: 'Hydraulic Hose Assembly 1/2 inch', category: 'Hydraulics', unit: 'Nos', basePrice: '1850.00', quantity: 72 },
+  { productCode: 'CSV-DN50', name: 'Carbon Steel Ball Valve DN50', category: 'Valves', unit: 'Nos', basePrice: '8400.00', quantity: 40 },
 ];
 
 async function seed() {
   const passwordHash = await bcrypt.hash('IndustrialFlow@123', 12);
   const admin = await prisma.user.upsert({
     where: { email: 'admin@industrialflow.local' },
-    update: { name: 'Aarav Admin', role: 'ADMIN', passwordHash },
-    create: { name: 'Aarav Admin', email: 'admin@industrialflow.local', passwordHash, role: 'ADMIN' },
+    update: { name: 'Raj', role: 'ADMIN', passwordHash },
+    create: { name: 'Raj', email: 'admin@industrialflow.local', passwordHash, role: 'ADMIN' },
   });
   const sales = await prisma.user.upsert({
     where: { email: 'sales@industrialflow.local' },
-    update: { name: 'Meera Sales', role: 'SALES_USER', passwordHash },
-    create: { name: 'Meera Sales', email: 'sales@industrialflow.local', passwordHash, role: 'SALES_USER' },
+    update: { name: 'Anupam Sales', role: 'SALES_USER', passwordHash },
+    create: { name: 'Anupam Sales', email: 'sales@industrialflow.local', passwordHash, role: 'SALES_USER' },
   });
 
   for (const item of products) {
@@ -33,6 +35,7 @@ async function seed() {
     });
     const inventory = await prisma.inventory.findUnique({ where: { productId: product.id } });
     if (!inventory) {
+      // Apply opening stock once; rerunning the seed must not reset live inventory.
       const created = await prisma.inventory.create({ data: { productId: product.id, physicalQuantity: item.quantity, reservedQuantity: 0 } });
       await prisma.inventoryMovement.create({ data: { productId: product.id, type: 'STOCK_RECEIPT', quantity: item.quantity, referenceType: 'SEED', referenceId: created.id, createdById: admin.id } });
     }
@@ -73,7 +76,7 @@ async function seed() {
       ] },
     },
   });
-  console.log('Seed complete: 2 users, 6 products/inventory records, 3 customers, and a draft demo quotation.');
+  console.log('Seed complete: 2 users, 8 products/inventory records, 3 customers, and a draft demo quotation.');
 }
 
 seed().catch((error) => {

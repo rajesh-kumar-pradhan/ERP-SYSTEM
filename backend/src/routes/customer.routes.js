@@ -8,6 +8,7 @@ import { asyncHandler } from '../utils/async-handler.js';
 const router = Router();
 router.use(authenticate);
 router.get('/', asyncHandler(controller.list));
-router.post('/', authorize('SALES_USER', 'ADMIN'), validate(customerSchema), asyncHandler(controller.create));
+router.post('/', authorize('SALES_USER'), validate(customerSchema), asyncHandler(controller.create));
+router.delete('/:id', authorize('SALES_USER'), asyncHandler(controller.remove));
 export default router;
 

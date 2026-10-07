@@ -6,7 +6,7 @@ All successful responses use `{ "success": true, "data": ... }`. Errors use `{ "
 
 ## Role summary
 
-Both authenticated roles can view shared business records and inventory availability. `SALES_USER` owns customer/enquiry creation, quotation creation and status changes, and accepted-quotation conversion. `ADMIN` owns stock receipts, inventory movement/audit visibility, sales-order confirmation, and dispatch. These write permissions are enforced by the API, not only by frontend controls.
+Both authenticated roles can view shared business records and inventory availability. `SALES_USER` owns customer/enquiry creation, quotation creation, marking quotations `SENT`, and converting an accepted quotation. `ADMIN` owns sent-quotation accept/reject, stock receipts, inventory movement/audit visibility, sales-order confirmation, and dispatch. These write permissions are enforced by the API, not only by frontend controls.
 
 ## Authentication
 
@@ -134,9 +134,9 @@ Returns `201` with calculated subtotal, discount, GST, grand total, and line fie
 
 ### `PATCH /quotations/:id/status`
 
-JWT required; `SALES_USER` only. Body: `{ "status": "SENT" | "ACCEPTED" | "REJECTED" }`.
+JWT required. Body: `{ "status": "SENT" | "ACCEPTED" | "REJECTED" }`.
 
-Allowed paths are `DRAFT → SENT`, then `SENT → ACCEPTED` or `SENT → REJECTED`. All other paths return `409 INVALID_STATE`. The quote row is locked during the change and the action is audited.
+`SALES_USER` may set `SENT` (`DRAFT → SENT`). `ADMIN` may set `ACCEPTED` or `REJECTED` (`SENT → ACCEPTED | REJECTED`). The other role receives `403 FORBIDDEN`. All other paths return `409 INVALID_STATE`. The quote row is locked during the change and the action is audited.
 
 ### `POST /quotations/:id/convert`
 

@@ -152,6 +152,33 @@ describeDatabase('ERP workflow integration', () => {
     expect(responses.map((response) => response.status)).toEqual([403, 403, 403, 403, 403, 403]);
     expect(responses.every((response) => response.body.code === 'FORBIDDEN')).toBe(true);
   });
+  it('lets sales mark a quotation sent but only admin can accept or reject it', async () => {
+    const { quote } = await orderFixture({ quoteStatus: 'DRAFT' });
+    const salesHeaders = { Authorization: `Bearer ${salesToken}` };
+    const adminHeaders = { Authorization: `Bearer ${adminToken}` };
+
+    const sent = await request(app).patch(`/api/quotations/${quote.id}/status`).set(salesHeaders).send({ status: 'SENT' });
+    expect(sent.status).toBe(200);
+    expect(sent.body.data.status).toBe('SENT');
+
+    const salesAccept = await request(app).patch(`/api/quotations/${quote.id}/status`).set(salesHeaders).send({ status: 'ACCEPTED' });
+    expect(salesAccept.status).toBe(403);
+    expect(salesAccept.body.code).toBe('FORBIDDEN');
+
+    const salesReject = await request(app).patch(`/api/quotations/${quote.id}/status`).set(salesHeaders).send({ status: 'REJECTED' });
+    expect(salesReject.status).toBe(403);
+    expect(salesReject.body.code).toBe('FORBIDDEN');
+
+    const accepted = await request(app).patch(`/api/quotations/${quote.id}/status`).set(adminHeaders).send({ status: 'ACCEPTED' });
+    expect(accepted.status).toBe(200);
+    expect(accepted.body.data.status).toBe('ACCEPTED');
+  });
+  it('lets admin reject a sent quotation', async () => {
+    const { quote } = await orderFixture({ quoteStatus: 'SENT' });
+    const response = await request(app).patch(`/api/quotations/${quote.id}/status`).set('Authorization', `Bearer ${adminToken}`).send({ status: 'REJECTED' });
+    expect(response.status).toBe(200);
+    expect(response.body.data.status).toBe('REJECTED');
+  });
   it.each([[80, 50], [70, 80]])('serializes concurrent reservations so %i and %i cannot oversubscribe 100', async (firstQuantity, secondQuantity) => {
     const first = await orderFixture({ quantity: firstQuantity, physical: 100 });
     const second = await orderFixture({ quantity: secondQuantity, physical: 100 });

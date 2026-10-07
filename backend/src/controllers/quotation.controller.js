@@ -15,7 +15,7 @@ export async function get(req, res) {
 }
 
 export async function updateStatus(req, res) {
-  const quotation = await quotationService.transitionQuotation(req.params.id, req.validatedBody.status, req.user.id);
+  const quotation = await quotationService.transitionQuotation(req.params.id, req.validatedBody.status, req.user.id, req.user.role);
   res.json({ success: true, data: serialize(quotation) });
 }
 

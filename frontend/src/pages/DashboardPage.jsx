@@ -10,6 +10,7 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState({
     enquiries: 0,
     activeQuotes: 0,
+    sentQuotes: 0,
     acceptedQuotes: 0,
     totalOrders: 0,
     pendingOrders: 0,
@@ -40,6 +41,7 @@ export default function DashboardPage() {
         setSummary({
           enquiries: enquiries.filter((enquiry) => ['NEW', 'QUOTED'].includes(enquiry.status)).length,
           activeQuotes: quotations.filter((quote) => ['DRAFT', 'SENT'].includes(quote.status)).length,
+          sentQuotes: quotations.filter((quote) => quote.status === 'SENT').length,
           acceptedQuotes: quotations.filter((quote) => quote.status === 'ACCEPTED' && !quote.salesOrder).length,
           totalOrders: orders.length,
           pendingOrders: orders.filter((order) => order.status === 'PENDING').length,
@@ -60,25 +62,26 @@ export default function DashboardPage() {
   const cards = isSalesUser
     ? [
       { label: 'Active enquiries', value: summary.enquiries, detail: 'New customer demand', to: '/enquiries' },
-      { label: 'Quotes in progress', value: summary.activeQuotes, detail: 'Draft or awaiting response', to: '/quotations' },
+      { label: 'Quotes in progress', value: summary.activeQuotes, detail: 'Draft or waiting for admin approval', to: '/quotations' },
       { label: 'Accepted quotes', value: summary.acceptedQuotes, detail: 'Ready to become orders', to: '/quotations' },
       { label: 'Orders created', value: summary.totalOrders, detail: 'Track fulfilment progress', to: '/orders' },
     ]
     : [
+      { label: 'Quotes awaiting approval', value: summary.sentQuotes, detail: 'Accept or reject sent quotations', to: '/quotations' },
       { label: 'Awaiting confirmation', value: summary.pendingOrders, detail: 'Orders needing stock reservation', to: '/orders' },
       { label: 'Ready to dispatch', value: summary.confirmedOrders, detail: 'Confirmed and reserved orders', to: '/orders' },
-      { label: 'Stock lines', value: summary.inventoryLines, detail: 'Products under inventory control', to: '/inventory' },
       { label: 'Low stock alerts', value: summary.lowStock, detail: 'Available quantity at or below 10', to: '/inventory' },
     ];
 
   const workflow = isSalesUser
     ? [
       { label: 'Start a customer enquiry', detail: 'Capture products and required dates', to: '/enquiries?new=1' },
-      { label: 'Prepare a quotation', detail: 'Set pricing, discount, and validity', to: '/quotations' },
-      { label: 'Convert accepted quotes', detail: 'Create a traceable sales order', to: '/quotations' },
+      { label: 'Prepare and send a quotation', detail: 'Set pricing, then mark sent for admin approval', to: '/quotations' },
+      { label: 'Convert accepted quotes', detail: 'After admin approval, create a sales order', to: '/quotations' },
       { label: 'Check stock availability', detail: 'See live physical and reserved stock', to: '/inventory' },
     ]
     : [
+      { label: 'Approve sent quotations', detail: 'Accept or reject quotes from sales', to: '/quotations' },
       { label: 'Confirm pending orders', detail: 'Check availability and reserve stock', to: '/orders' },
       { label: 'Receive incoming stock', detail: 'Add units to an existing product', to: '/inventory?receive=1' },
       { label: 'Dispatch confirmed orders', detail: 'Ship quantities already reserved', to: '/orders' },
@@ -106,8 +109,8 @@ export default function DashboardPage() {
           <p className="welcome-kicker">{isSalesUser ? 'CUSTOMER TO ORDER' : 'STOCK TO SHIPMENT'}</p>
           <h2>{isSalesUser ? 'Keep every customer request moving.' : 'Keep fulfilment accurate and on time.'}</h2>
           <p>{isSalesUser
-            ? 'Manage enquiries, prepare clear quotations, and follow accepted demand into orders.'
-            : 'Review order readiness, protect reserved stock, and complete dispatch with a clear inventory trail.'}</p>
+            ? 'Manage enquiries, send quotations for admin approval, and convert accepted quotes into orders.'
+            : 'Approve sent quotations, then confirm orders, protect reserved stock, and complete dispatch with a clear inventory trail.'}</p>
         </div>
         <div className="welcome-aside">
           <span>{isSalesUser ? 'YOUR DESK' : 'CONTROL ROOM'}</span>
@@ -169,6 +172,7 @@ export default function DashboardPage() {
                   <div className="metric-row"><span>Accepted, not converted</span><strong>{summary.acceptedQuotes}</strong></div>
                   <div className="metric-row"><span>Orders to track</span><strong>{summary.totalOrders}</strong></div>
                 </> : <>
+                  <div className="metric-row"><span>Quotes awaiting approval</span><strong>{summary.sentQuotes}</strong></div>
                   <div className="metric-row"><span>Orders to confirm</span><strong>{summary.pendingOrders}</strong></div>
                   <div className="metric-row"><span>Orders to dispatch</span><strong>{summary.confirmedOrders}</strong></div>
                   <div className="metric-row"><span>Products tracked</span><strong>{summary.inventoryLines}</strong></div>
@@ -186,15 +190,15 @@ export default function DashboardPage() {
             <ul className="priority-list">
               <li>
                 <span className="priority-dot success"></span>
-                {isSalesUser ? 'Respond to active enquiries and keep customer requirements clear.' : 'Confirm only orders with sufficient available stock.'}
+                {isSalesUser ? 'Respond to active enquiries and keep customer requirements clear.' : 'Accept or reject sent quotations before fulfilment starts.'}
               </li>
               <li>
                 <span className="priority-dot warning"></span>
-                {isSalesUser ? 'Prepare accurate quotations with the right pricing and validity dates.' : 'Monitor low-stock items and record receipts through the inventory ledger.'}
+                {isSalesUser ? 'Mark quotations sent so admin can accept or reject them.' : 'Confirm only orders with sufficient available stock.'}
               </li>
               <li>
                 <span className="priority-dot neutral"></span>
-                {isSalesUser ? 'Convert accepted quotations so fulfilment can begin.' : 'Dispatch confirmed orders so physical and reserved quantities stay aligned.'}
+                {isSalesUser ? 'Convert admin-accepted quotations so fulfilment can begin.' : 'Dispatch confirmed orders so physical and reserved quantities stay aligned.'}
               </li>
             </ul>
           </section>

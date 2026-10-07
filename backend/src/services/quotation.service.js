@@ -1,6 +1,6 @@
 import { prisma } from '../lib/prisma.js';
 import { businessNumber } from '../utils/business-number.js';
-import { conflict, notFound } from '../utils/app-error.js';
+import { AppError, conflict, notFound } from '../utils/app-error.js';
 import { audit } from './audit.service.js';
 import { calculateQuotation } from './financial.service.js';
 import { assertTransition } from './state-machine.service.js';
@@ -67,7 +67,13 @@ export async function getQuotation(id) {
   return quotation;
 }
 
-export async function transitionQuotation(id, status, userId) {
+export async function transitionQuotation(id, status, userId, role) {
+  if (status === 'SENT' && role !== 'SALES_USER') {
+    throw new AppError('You do not have permission for this operation', 403, 'FORBIDDEN');
+  }
+  if (['ACCEPTED', 'REJECTED'].includes(status) && role !== 'ADMIN') {
+    throw new AppError('You do not have permission for this operation', 403, 'FORBIDDEN');
+  }
   return prisma.$transaction(async (tx) => {
     // Lock makes a concurrent double-click observe the newly committed state.
     const locked = await tx.$queryRaw`SELECT "id", "status", "enquiry_id" FROM "quotations" WHERE "id" = ${id} FOR UPDATE`;
